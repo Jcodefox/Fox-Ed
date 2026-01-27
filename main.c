@@ -52,14 +52,6 @@ void debug_print_line(const line_t* line, int y, int line_index, int max_width){
 	}
 }
 
-void debug_print_all(const line_t* lines, int line_count){
-	for (int i = 0; i < line_count; i++){
-		debug_print_line(&lines[i], i, i, COLS);
-	}
-	move(line_count, 0);
-	clrtoeol();
-}
-
 void debug_print_in_view(editor_state_t* state, int view_height, int view_offset_y){
 	int amount_y = fox_min(view_height, state->line_count);
 	int data_offset_y = state->view_data_offset_y;
@@ -82,6 +74,21 @@ void set_cursor_in_view(editor_state_t* state, int view_offset_y){
 	int x = state->cursor_x + 5;
 	x = fox_min(x, COLS - 1);
 	move(y, x);
+}
+
+void render_all(editor_state_t* state){
+	debug_print_in_view(state, LINES-1, 0);
+	move(LINES-1, 0);
+	attron(A_STANDOUT);
+	for (int i = 0; i < COLS; i++){
+		addch(' ');
+	}
+	if (state->needs_saving){
+		mvwprintw(stdscr, LINES-1, COLS-state->filename_length, "*");
+	}
+	mvwprintw(stdscr, LINES-1, COLS-state->filename_length + 1, "%s", state->filename);
+	attroff(A_STANDOUT);
+	set_cursor_in_view(state, 0);
 }
 
 // ====== Cursor Management Functions ======
@@ -290,6 +297,7 @@ int main(int argc, char* argv[]){
 	editor_state.cursor_y = 0;
 	editor_state.filename_length = 0;
 	editor_state.needs_saving = 0;
+	editor_state.view_data_offset_y = 0;
 	
 	if (argc >= 2){
 		while(
@@ -306,25 +314,16 @@ int main(int argc, char* argv[]){
 	if (editor_state.filename_length > 0){
 		read_file(&editor_state);
 	}
+
+	editor_state.cursor_x = 0;
+	editor_state.cursor_y = 0;
 	
 	char last_key = ' ';
-	debug_print_in_view(&editor_state, LINES-1, 0);
-	set_cursor_in_view(&editor_state, 0);
+	render_all(&editor_state);
 	while (1){
 		int key = getch();
 		send_key(&editor_state, key);
-		debug_print_in_view(&editor_state, LINES-1, 0);
-		move(LINES-1, 0);
-		attron(A_STANDOUT);
-		for (int i = 0; i < COLS; i++){
-			addch(' ');
-		}
-		if (editor_state.needs_saving){
-			mvwprintw(stdscr, LINES-1, COLS-editor_state.filename_length, "*");
-		}
-		mvwprintw(stdscr, LINES-1, COLS-editor_state.filename_length + 1, "%s", editor_state.filename);
-		attroff(A_STANDOUT);
-		set_cursor_in_view(&editor_state, 0);
+		render_all(&editor_state);
 	}
 	
 	endwin();
