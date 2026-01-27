@@ -23,6 +23,8 @@ typedef struct {
 	
 	char filename[MAX_FILENAME_LENGTH];
 	int filename_length;
+
+	int needs_saving;
 } editor_state_t;
 
 // ====== Custom min and max to remove dependencies ======
@@ -37,9 +39,10 @@ int fox_max(int a, int b){
 
 // ====== Debug Print Functions ======
 
-void debug_print_line(const line_t* line, int y){
+void debug_print_line(const line_t* line, int y, int line_index){
 	move(y, 0);
 	clrtoeol();
+	mvwprintw(stdscr, y, 0, "%4d ", line_index + 1);
 	for (int i = 0; i < line->length; i++){
 		if (line->data[i] == '\t'){
 			addch(' ');
@@ -51,7 +54,7 @@ void debug_print_line(const line_t* line, int y){
 
 void debug_print_all(const line_t* lines, int line_count){
 	for (int i = 0; i < line_count; i++){
-		debug_print_line(&lines[i], i);
+		debug_print_line(&lines[i], i, i);
 	}
 	move(line_count, 0);
 	clrtoeol();
@@ -65,12 +68,12 @@ void debug_print_in_view(editor_state_t* state, int view_height, int view_offset
 	data_offset_y = fox_max(0, data_offset_y);
 	state->view_data_offset_y = data_offset_y;
 	for (int i = 0; i < amount_y; i++){//state->line_count; i++){
-		debug_print_line(&state->lines[i + data_offset_y], i + view_offset_y);
+		debug_print_line(&state->lines[i + data_offset_y], i + view_offset_y, i + data_offset_y);
 	}
 }
 
 void set_cursor_in_view(editor_state_t* state, int view_offset_y){
-	move((state->cursor_y - state->view_data_offset_y) + view_offset_y, state->cursor_x);
+	move((state->cursor_y - state->view_data_offset_y) + view_offset_y, state->cursor_x + 5);
 }
 
 // ====== Cursor Management Functions ======
@@ -199,12 +202,14 @@ void send_key(editor_state_t* state, int key){
 		case(10):
 		case(KEY_ENTER):
 			create_newline(state, state->cursor_y);
+			state->needs_saving = 1;
 			break;
 		case(KEY_BACKSPACE): {
 			int line_index = state->cursor_y;
 			int start = state->cursor_x - 1;
 			int len = 1;
 			remove_characters(state, line_index, start, len);
+			state->needs_saving = 1;
 			break;
 		}
 		case(KEY_LEFT): {
@@ -223,8 +228,32 @@ void send_key(editor_state_t* state, int key){
 			state->cursor_y += 1;
 			break;
 		}
+		case(KEY_HOME): {
+			state->cursor_x = 0;
+			break;
+		}
+		case(KEY_END): {
+			state->cursor_x = state->lines[state->cursor_y].length;
+			break;
+		}
+		case(KEY_PPAGE):  { // Page up
+			state->view_data_offset_y -= LINES - 4;
+			state->cursor_y = state->view_data_offset_y + LINES - 1;
+			break;
+		}
+		case(KEY_NPAGE):  { // Page down
+			state->view_data_offset_y += LINES - 4;
+			state->cursor_y = state->view_data_offset_y;
+			break;
+		}
+
+#ifdef KEY_RESIZE
+		case(KEY_RESIZE): { break; }
+#endif
+
 		case(19): {
 			write_file(state);
+			state->needs_saving = 0;
 			break;
 		}
 		case(27):{ break; }
@@ -232,6 +261,7 @@ void send_key(editor_state_t* state, int key){
 			int line_index = state->cursor_y;
 			int pos = state->cursor_x;
 			insert_character(state, line_index, pos, key);
+			state->needs_saving = 1;
 			break;
 		}
 	}
@@ -251,6 +281,7 @@ int main(int argc, char* argv[]){
 	editor_state.cursor_x = 0;
 	editor_state.cursor_y = 0;
 	editor_state.filename_length = 0;
+	editor_state.needs_saving = 0;
 	
 	if (argc >= 2){
 		while(
@@ -275,7 +306,16 @@ int main(int argc, char* argv[]){
 		int key = getch();
 		send_key(&editor_state, key);
 		debug_print_in_view(&editor_state, LINES-1, 0);
-		mvwprintw(stdscr, LINES-1, 0, "%d", key);
+		move(LINES-1, 0);
+		attron(A_STANDOUT);
+		for (int i = 0; i < COLS; i++){
+			addch(' ');
+		}
+		if (editor_state.needs_saving){
+			mvwprintw(stdscr, LINES-1, COLS-editor_state.filename_length, "*");
+		}
+		mvwprintw(stdscr, LINES-1, COLS-editor_state.filename_length + 1, "%s", editor_state.filename);
+		attroff(A_STANDOUT);
 		set_cursor_in_view(&editor_state, 0);
 	}
 	
