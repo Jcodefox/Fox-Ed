@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define TAB_WIDTH 20
+#define TAB_WIDTH 4
 
 #define MAX_LINE_LENGTH 10000
 #define MAX_LINE_COUNT 10000
