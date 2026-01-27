@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define TAB_WIDTH 20
+
 #define MAX_LINE_LENGTH 10000
 #define MAX_LINE_COUNT 10000
 
@@ -45,7 +47,9 @@ void debug_print_line(const line_t* line, int y, int line_index, int max_width){
 	mvwprintw(stdscr, y, 0, "%4d ", line_index + 1);
 	for (int i = 0; i < line->length && i < max_width - 5; i++){
 		if (line->data[i] == '\t'){
-			addch(' ');
+			for (int t = 0; t < TAB_WIDTH; t++){
+				addch(' ');
+			}
 		}else{
 			addch(line->data[i]);
 		}
@@ -72,6 +76,11 @@ void debug_print_in_view(editor_state_t* state, int view_height, int view_offset
 void set_cursor_in_view(editor_state_t* state, int view_offset_y){
 	int y = (state->cursor_y - state->view_data_offset_y) + view_offset_y;
 	int x = state->cursor_x + 5;
+	for(int i = 0; i < fox_min(state->lines[state->cursor_y].length, state->cursor_x); i++){
+		if (state->lines[state->cursor_y].data[i] == '\t'){
+			x += TAB_WIDTH - 1;
+		}
+	}
 	x = fox_min(x, COLS - 1);
 	move(y, x);
 }
