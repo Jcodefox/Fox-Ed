@@ -39,11 +39,11 @@ int fox_max(int a, int b){
 
 // ====== Debug Print Functions ======
 
-void debug_print_line(const line_t* line, int y, int line_index){
+void debug_print_line(const line_t* line, int y, int line_index, int max_width){
 	move(y, 0);
 	clrtoeol();
 	mvwprintw(stdscr, y, 0, "%4d ", line_index + 1);
-	for (int i = 0; i < line->length; i++){
+	for (int i = 0; i < line->length && i < max_width - 5; i++){
 		if (line->data[i] == '\t'){
 			addch(' ');
 		}else{
@@ -54,7 +54,7 @@ void debug_print_line(const line_t* line, int y, int line_index){
 
 void debug_print_all(const line_t* lines, int line_count){
 	for (int i = 0; i < line_count; i++){
-		debug_print_line(&lines[i], i, i);
+		debug_print_line(&lines[i], i, i, COLS);
 	}
 	move(line_count, 0);
 	clrtoeol();
@@ -69,7 +69,7 @@ void debug_print_in_view(editor_state_t* state, int view_height, int view_offset
 	amount_y = fox_min(amount_y, state->line_count - data_offset_y);
 	state->view_data_offset_y = data_offset_y;
 	for (int i = 0; i < amount_y; i++){
-		debug_print_line(&state->lines[i + data_offset_y], i + view_offset_y, i + data_offset_y);
+		debug_print_line(&state->lines[i + data_offset_y], i + view_offset_y, i + data_offset_y, COLS);
 	}
 	for (int i = amount_y; i < view_height; i++){
 		move(i, 0);
@@ -78,7 +78,10 @@ void debug_print_in_view(editor_state_t* state, int view_height, int view_offset
 }
 
 void set_cursor_in_view(editor_state_t* state, int view_offset_y){
-	move((state->cursor_y - state->view_data_offset_y) + view_offset_y, state->cursor_x + 5);
+	int y = (state->cursor_y - state->view_data_offset_y) + view_offset_y;
+	int x = state->cursor_x + 5;
+	x = fox_min(x, COLS - 1);
+	move(y, x);
 }
 
 // ====== Cursor Management Functions ======
