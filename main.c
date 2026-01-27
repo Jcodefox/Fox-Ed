@@ -66,9 +66,14 @@ void debug_print_in_view(editor_state_t* state, int view_height, int view_offset
 	data_offset_y = fox_min(data_offset_y, state->cursor_y);
 	data_offset_y = fox_max(data_offset_y, state->cursor_y - amount_y + 1);
 	data_offset_y = fox_max(0, data_offset_y);
+	amount_y = fox_min(amount_y, state->line_count - data_offset_y);
 	state->view_data_offset_y = data_offset_y;
-	for (int i = 0; i < amount_y; i++){//state->line_count; i++){
+	for (int i = 0; i < amount_y; i++){
 		debug_print_line(&state->lines[i + data_offset_y], i + view_offset_y, i + data_offset_y);
+	}
+	for (int i = amount_y; i < view_height; i++){
+		move(i, 0);
+		clrtoeol();
 	}
 }
 
