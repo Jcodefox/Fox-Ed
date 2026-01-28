@@ -1,10 +1,9 @@
 #include <ncurses.h>
 #include <stdio.h>
-#include <string.h>
 
 #define TAB_WIDTH 4
 
-#define MAX_LINE_LENGTH 10000
+#define MAX_LINE_LENGTH 1000
 #define MAX_LINE_COUNT 10000
 
 #define MAX_FILENAME_LENGTH 1000
@@ -44,8 +43,8 @@ int fox_max(int a, int b){
 void debug_print_line(const line_t* line, int y, int line_index, int max_width){
 	move(y, 0);
 	clrtoeol();
-	mvwprintw(stdscr, y, 0, "%4d ", line_index + 1);
-	for (int i = 0; i < line->length && i < max_width - 5; i++){
+	mvwprintw(stdscr, y, 0, "%5d ", line_index + 1);
+	for (int i = 0; i < line->length && i < max_width - 6; i++){
 		if (line->data[i] == '\t'){
 			for (int t = 0; t < TAB_WIDTH; t++){
 				addch(' ');
@@ -75,7 +74,7 @@ void debug_print_in_view(editor_state_t* state, int view_height, int view_offset
 
 void set_cursor_in_view(editor_state_t* state, int view_offset_y){
 	int y = (state->cursor_y - state->view_data_offset_y) + view_offset_y;
-	int x = state->cursor_x + 5;
+	int x = state->cursor_x + 6;
 	for(int i = 0; i < fox_min(state->lines[state->cursor_y].length, state->cursor_x); i++){
 		if (state->lines[state->cursor_y].data[i] == '\t'){
 			x += TAB_WIDTH - 1;
@@ -182,6 +181,10 @@ void insert_character(editor_state_t* state, int line_index, int pos, char chara
 void read_file(editor_state_t* state){
 	const char* filename = state->filename;
 	FILE* file = fopen(filename, "r");
+	if (!file){
+		state->needs_saving = 1;
+		return;
+	}
 	state->line_count = 1;
 	state->lines[0].length = 0;
 	state->cursor_x = 0;
@@ -203,8 +206,14 @@ void read_file(editor_state_t* state){
 }
 
 void write_file(editor_state_t* state){
+	if (state->filename_length == 0){
+		return;
+	}
 	const char* filename = state->filename;
 	FILE* file = fopen(filename, "w");
+	if (!file){
+		return;
+	}
 	char c[1];
 	for (int line = 0; line < state->line_count; line++){
 		for (int i = 0; i < state->lines[line].length; i++) {
@@ -217,6 +226,7 @@ void write_file(editor_state_t* state){
 		}
 	}
 	fclose(file);
+	state->needs_saving = 0;
 }
 
 // ====== Key Handling ======
@@ -277,7 +287,6 @@ void send_key(editor_state_t* state, int key){
 
 		case(19): {
 			write_file(state);
-			state->needs_saving = 0;
 			break;
 		}
 		case(27):{ break; }
