@@ -23,6 +23,8 @@ typedef struct {
 	
 	int cursor_x;
 	int cursor_y;
+
+	int furthest_right;
 	
 	int view_data_offset_y;
 	
@@ -150,10 +152,19 @@ void remove_lines(editor_state_t* state, int start, int len){
 
 // ====== Character Management Functions ======
 
-void remove_characters(editor_state_t* state, int line_index, int start, int len){
-	if (state->cursor_x == 0) {
+int remove_characters(editor_state_t* state, int line_index, int start, int len){
+	for (int i = start; i < state->lines[line_index].length - len; i++){
+		state->lines[line_index].data[i] = state->lines[line_index].data[i+len];
+	}
+	state->lines[line_index].length -= len;
+	return 1;
+}
+
+void backspace(editor_state_t* state, int line_index, int start, int len){
+	if (state->cursor_x == 0){
 		if (state->lines[state->cursor_y].length == 0){
 			remove_lines(state, state->cursor_y, 1);
+
 		}else{
 			state->cursor_y -= 1;
 			limit_cursor_to_bounds(state);
@@ -161,11 +172,11 @@ void remove_characters(editor_state_t* state, int line_index, int start, int len
 		}
 		return;
 	}
-	for (int i = start; i < state->lines[line_index].length - len; i++){
-		state->lines[line_index].data[i] = state->lines[line_index].data[i+len];
+
+	if (remove_characters(state, line_index, start, len)){
+
+		state->cursor_x -= 1;
 	}
-	state->lines[line_index].length -= len;
-	state->cursor_x -= 1;
 }
 
 void insert_character(editor_state_t* state, int line_index, int pos, char character){
@@ -236,6 +247,7 @@ void write_file(editor_state_t* state){
 // ====== Key Handling ======
 
 void send_key(editor_state_t* state, int key){
+	int skip_set_furthest_right = 0;
 	switch(key){
 		case(10):
 		case(KEY_ENTER):
@@ -246,7 +258,7 @@ void send_key(editor_state_t* state, int key){
 			int line_index = state->cursor_y;
 			int start = state->cursor_x - 1;
 			int len = 1;
-			remove_characters(state, line_index, start, len);
+			backspace(state, line_index, start, len);
 			state->needs_saving = 1;
 			break;
 		}
@@ -256,52 +268,72 @@ void send_key(editor_state_t* state, int key){
 			int len = 1;
 			if (start != state->lines[line_index].length){
 				remove_characters(state, line_index, start, len);
-				state->cursor_x = start;
 				state->needs_saving = 1;
 			}
 			break;
 		}
 		case(KEY_LEFT): {
 			state->cursor_x -= 1;
+			if (state->cursor_x < 0 && state->cursor_y > 0){
+				state->cursor_y -= 1;
+				state->cursor_x = state->lines[state->cursor_y].length;
+			}
 			break;
 		}
 		case(KEY_RIGHT): {
 			state->cursor_x += 1;
+			if (state->cursor_x > state->lines[state->cursor_y].length){
+				state->cursor_y += 1;
+				state->cursor_x = 0;
+			}
 			break;
 		}
 		case(KEY_UP): {
 			state->cursor_y -= 1;
+			state->cursor_x = state->furthest_right;
+			skip_set_furthest_right = 1;
 			break;
 		}
 		case(KEY_DOWN): {
 			state->cursor_y += 1;
+			state->cursor_x = state->furthest_right;
+			skip_set_furthest_right = 1;
 			break;
 		}
 		case(KEY_HOME): {
 			state->cursor_x = 0;
+			state->furthest_right = 0;
+			skip_set_furthest_right = 1;
 			break;
 		}
 		case(KEY_END): {
 			state->cursor_x = state->lines[state->cursor_y].length;
+			state->furthest_right = MAX_LINE_LENGTH;
+			skip_set_furthest_right = 1;
 			break;
 		}
 		case(KEY_PPAGE):  { // Page up
 			state->view_data_offset_y -= LINES - 4;
 			state->cursor_y = state->view_data_offset_y + LINES - 1;
+			state->cursor_x = state->furthest_right;
+			skip_set_furthest_right = 1;
 			break;
 		}
 		case(KEY_NPAGE):  { // Page down
 			state->view_data_offset_y += LINES - 4;
 			state->cursor_y = state->view_data_offset_y;
+			state->cursor_x = state->furthest_right;
+			skip_set_furthest_right = 1;
 			break;
 		}
 
 #ifdef KEY_RESIZE
-		case(KEY_RESIZE): { break; }
+		case(KEY_RESIZE): { skip_set_furthest_right = 1; break; }
 #endif
 
 		case(19): {
 			write_file(state);
+			skip_set_furthest_right = 1;
 			break;
 		}
 		case(27):{ break; }
@@ -314,6 +346,9 @@ void send_key(editor_state_t* state, int key){
 		}
 	}
 	limit_cursor_to_bounds(state);
+	if (!skip_set_furthest_right){
+		state->furthest_right = state->cursor_x;
+	}
 }
 
 int main(int argc, char* argv[]){
@@ -350,6 +385,8 @@ int main(int argc, char* argv[]){
 
 	editor_state.cursor_x = 0;
 	editor_state.cursor_y = 0;
+
+	editor_state.furthest_right = 0;
 	
 	char last_key = ' ';
 	render_all(&editor_state);
