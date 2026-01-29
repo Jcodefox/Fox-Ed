@@ -1,4 +1,8 @@
+#if defined(WIN32)
+#include <ncursesw/ncurses.h>
+#else
 #include <ncurses.h>
+#endif
 #include <stdio.h>
 
 #define TAB_WIDTH 4
@@ -246,6 +250,17 @@ void send_key(editor_state_t* state, int key){
 			state->needs_saving = 1;
 			break;
 		}
+		case(KEY_DC): {
+			int line_index = state->cursor_y;
+			int start = state->cursor_x;
+			int len = 1;
+			if (start != state->lines[line_index].length){
+				remove_characters(state, line_index, start, len);
+				state->cursor_x = start;
+				state->needs_saving = 1;
+			}
+			break;
+		}
 		case(KEY_LEFT): {
 			state->cursor_x -= 1;
 			break;
@@ -342,6 +357,9 @@ int main(int argc, char* argv[]){
 		int key = getch();
 		send_key(&editor_state, key);
 		render_all(&editor_state);
+
+		//mvwprintw(stdscr, LINES-1, 0, "%d", key);
+		//set_cursor_in_view(&editor_state, 0);
 	}
 	
 	endwin();
