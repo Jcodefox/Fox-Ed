@@ -39,7 +39,7 @@ void render_all(editor_state_t* state){
 	for (int i = 0; i < state->screen_width; i++){
 		addch(' ');
 	}
-	if (state->needs_saving){
+	if (state->edited_since_saving){
 		mvwprintw(stdscr, state->screen_height-1, state->screen_width-state->filename_length, "*");
 	}
 	mvwprintw(stdscr, state->screen_height-1, state->screen_width-state->filename_length + 1, "%s", state->filename);
@@ -52,18 +52,18 @@ void read_file(editor_state_t* state){
 	const char* filename = state->filename;
 	FILE* file = fopen(filename, "r");
 	if (!file){
-		state->needs_saving = 1;
+		state->edited_since_saving = 1;
 		return;
 	}
 	clear_all_lines(state);
-	state->needs_saving = 0;
+	state->edited_since_saving = 0;
 	char c[1];
 	int read_length = fread(c, sizeof(c), 1, file);
 	while (read_length == 1){
 		if (c[0] == '\n'){
-			create_newline(state, state->cursor_y);
+			create_newline_at_cursor(state);
 		} else {
-			insert_character(state, state->cursor_y, state->cursor_x, c[0]);
+			insert_character_at_cursor(state, c[0]);
 		}
 		read_length = fread(c, sizeof(c), 1, file);
 	}
@@ -87,7 +87,7 @@ void write_file(editor_state_t* state){
 		}
 	}
 	fclose(file);
-	state->needs_saving = 0;
+	state->edited_since_saving = 0;
 }
 
 int main(int argc, char* argv[]){
@@ -97,7 +97,7 @@ int main(int argc, char* argv[]){
 	editor_state.filename_length = 0;
 	editor_state.line_count = 1;
 	editor_state.lines[0].length = 0;
-	editor_state.needs_saving = 0;
+	editor_state.edited_since_saving = 0;
 	editor_state.view_data_offset_y = 0;
 	
 	if (argc >= 2){
@@ -121,6 +121,8 @@ int main(int argc, char* argv[]){
 	editor_state.furthest_right = 0;
 	
 	char last_key = ' ';
+	editor_state.screen_width = COLS;
+	editor_state.screen_height = LINES;
 	render_all(&editor_state);
 	while (1){
 		int key = getch();
@@ -144,7 +146,7 @@ int main(int argc, char* argv[]){
 #ifdef KEY_RESIZE
 			case(KEY_RESIZE): { break; }
 #endif
-			default: { type_character(&editor_state, key); break; }
+			default: { insert_character_at_cursor(&editor_state, key); break; }
 		}
 		render_all(&editor_state);
 	}

@@ -51,7 +51,7 @@ typedef struct {
 	char filename[MAX_FILENAME_LENGTH];
 	int filename_length;
 
-	int needs_saving;
+	int edited_since_saving;
 } editor_state_t;
 
 // ====== Functions Library User Must Implement ======
@@ -63,23 +63,20 @@ void write_file(editor_state_t* state); // TODO: IO Interface can't be required
 // ====== Functions Library User Can Use ======
 void limit_cursor_to_bounds(editor_state_t* state);
 
-void set_cursor_in_view(editor_state_t* state, int view_offset_y);
-void print_line_at(const line_t* line, int y, int line_index, int max_width);
 void print_in_view(editor_state_t* state, int view_height, int view_offset_y);
 
 void copy_line_to_line(editor_state_t* state, int index_src, int index_dest);
-void create_newline(editor_state_t* state, int pos);
+void create_newline_at_cursor(editor_state_t* state);
 void remove_lines(editor_state_t* state, int start, int len);
 void clear_all_lines(editor_state_t* state);
 
 int remove_characters(editor_state_t* state, int line_index, int start, int len);
-void backspace(editor_state_t* state, int line_index, int start, int len);
-void insert_character(editor_state_t* state, int line_index, int pos, char character);
+void backspace_at_cursor(editor_state_t* state, int len);
+void insert_character_at_cursor(editor_state_t* state, char character);
 
 void send_special_key(editor_state_t* state, int key);
-void type_character(editor_state_t *state, int ch);
 
-//#define FOX_ED_IMPLEMENTATION
+#define FOX_ED_IMPLEMENTATION
 #ifdef FOX_ED_IMPLEMENTATION
 // ====== Custom min and max to remove dependencies ======
 
@@ -91,31 +88,63 @@ int fox_max(int a, int b){
 	return (a > b) ? a : b;
 }
 
+int fox_clamp(int n, int a, int b){
+	return fox_min(fox_max(n, a), b);
+}
+
 // ====== Cursor Management Functions ======
 
 void limit_cursor_to_bounds(editor_state_t* state){
-	state->cursor_y = fox_max(state->cursor_y, 0);
-	state->cursor_x = fox_max(state->cursor_x, 0);
-	
-	state->cursor_y = fox_min(state->cursor_y, state->line_count - 1);
-	state->cursor_x = fox_min(state->cursor_x, state->lines[state->cursor_y].length);
+	state->cursor_y = fox_clamp(state->cursor_y, 0, state->line_count - 1);
+	state->cursor_x = fox_clamp(state->cursor_x, 0, state->lines[state->cursor_y].length);
 }
 
 // ======= Render Functions ======
 
-void set_cursor_in_view(editor_state_t* state, int view_offset_y){
-	int y = (state->cursor_y - state->view_data_offset_y) + view_offset_y;
-	int x = state->cursor_x + 6;
+int get_line_visual_width(editor_state_t* state, int line){
+	int len = state->lines[line].length;
+	for (int i = 0; i < state->lines[line].length; i++){
+		if (state->lines[line].data[i] == '\t'){
+			len += TAB_WIDTH - 1;
+		}
+	}
+	return len;
+}
+
+int get_line_visual_height(editor_state_t* state, int line){
+	int len = fox_max(1, get_line_visual_width(state, line));
+	return (len / (state->screen_width - 6));
+}
+
+int get_view_cursor_x(editor_state_t* state, int view_offset_y){
+	int x = state->cursor_x;
 	for(int i = 0; i < fox_min(state->lines[state->cursor_y].length, state->cursor_x); i++){
 		if (state->lines[state->cursor_y].data[i] == '\t'){
 			x += TAB_WIDTH - 1;
 		}
 	}
+	x = x % (state->screen_width - 6);
+	x += 6;
 	x = fox_min(x, state->screen_width - 1);
+	return x;
+}
+
+int get_view_cursor_y(editor_state_t *state, int view_offset_y){
+	int y = (state->cursor_y - state->view_data_offset_y) + view_offset_y;
+	for (int i = state->view_data_offset_y; i < state->cursor_y; i++){
+		y += get_line_visual_height(state, i);
+	}
+	y += state->cursor_x / (state->screen_width - 6);
+	return y;
+}
+
+void set_cursor_in_view(editor_state_t* state, int view_offset_y){
+	int x = get_view_cursor_x(state, view_offset_y);
+	int y = get_view_cursor_y(state, view_offset_y);
 	set_cursor_on_screen(x, y);
 }
 
-void print_line_at(const line_t* line, int y, int line_index, int max_width){
+int print_line_at(const line_t* line, int y, int line_index, int max_width){
 	clear_line(y);
 	int val_to_print = line_index + 1;
 	int printed_above_zero = 0;
@@ -133,7 +162,8 @@ void print_line_at(const line_t* line, int y, int line_index, int max_width){
 		}
 	}
 	put_char_at(x++, y, ' ');
-	for (int i = 0; i < line->length && i < max_width - 6; i++){
+	int lines_printed = 1;
+	for (int i = 0; i < line->length; i++){
 		if (line->data[i] == '\t'){
 			for (int t = 0; t < TAB_WIDTH; t++){
 				put_char_at(x++, y, ' ');
@@ -141,27 +171,65 @@ void print_line_at(const line_t* line, int y, int line_index, int max_width){
 		}else{
 			put_char_at(x++, y, line->data[i]);
 		}
+		
+		if (x >= max_width && i != line->length){
+			y += 1;
+			clear_line(y);
+			x = 6;
+			lines_printed += 1;
+		}
 	}
+	return lines_printed;
+}
+
+//TODO: Simplify lines below
+int how_many_to_print(editor_state_t* state, int view_height, int data_offset){
+	int amount_y = fox_min(view_height, state->line_count);
+	int sum = 0;
+	for (int i = 0; i < amount_y; i++){
+		sum += get_line_visual_height(state, data_offset + i) + 1;
+		if (sum >= view_height){
+			return i + 1;
+		}
+	}
+	return amount_y;
+}
+
+int get_cursor_y_visual_dist_to_top_of_view(editor_state_t *state){
+	int y = state->cursor_y;//(state->cursor_y - state->view_data_offset_y);
+	y += state->cursor_x / (state->screen_width - 6);
+	for (int i = state->view_data_offset_y; i < state->cursor_y; i++){
+		y += get_line_visual_height(state, i);
+	}
+	return y;
 }
 
 void print_in_view(editor_state_t* state, int view_height, int view_offset_y){
-	int amount_y = fox_min(view_height, state->line_count);
-	int data_offset_y = state->view_data_offset_y;
-	data_offset_y = fox_min(data_offset_y, state->cursor_y);
-	data_offset_y = fox_max(data_offset_y, state->cursor_y - amount_y + 1);
-	data_offset_y = fox_max(0, data_offset_y);
-	amount_y = fox_min(amount_y, state->line_count - data_offset_y);
+	view_height = 10;
+	
+	int c_y = state->cursor_y;
+	int amount_y = how_many_to_print(state, view_height, state->view_data_offset_y);
+	int down_distance_to_scroll = fox_max(0, c_y - amount_y + 1);
+	int data_offset_y = fox_clamp(state->view_data_offset_y, down_distance_to_scroll, c_y);
 	state->view_data_offset_y = data_offset_y;
+	
+	int overflow_offset = 0;
 	for (int i = 0; i < amount_y; i++){
-		print_line_at(&state->lines[i + data_offset_y], i + view_offset_y, i + data_offset_y, state->screen_width);
+		line_t* line = &state->lines[i + data_offset_y];
+		int visual_location = i + view_offset_y + overflow_offset;
+		int line_number = i + data_offset_y;
+		int width = state->screen_width;
+		
+		int lines_taken = print_line_at(line, visual_location, line_number, width);
+		overflow_offset += lines_taken - 1;
 	}
 	for (int i = amount_y; i < view_height; i++){
 		clear_line(i);
 	}
 }
 
+// Below functions are likely simplified enough
 // ====== Line Management Functions ======
-
 void copy_line_to_line(editor_state_t* state, int index_src, int index_dest){
 	state->lines[index_dest].length = state->lines[index_src].length;
 	for (int i = 0; i < state->lines[index_src].length; i++){
@@ -169,14 +237,17 @@ void copy_line_to_line(editor_state_t* state, int index_src, int index_dest){
 	}
 }
 
-void create_newline(editor_state_t* state, int pos){
+void create_newline_at_cursor(editor_state_t* state){
+	const int pos = state->cursor_y;
 	const int len = 1;
 	if (state->line_count + len > MAX_LINE_COUNT){
 		return;
 	}
 	state->line_count += len;
 	for (int i = state->line_count - 1; i >= pos + len; i--){
-		copy_line_to_line(state, i-len, i);
+		int src = i-len;
+		int dest = i;
+		copy_line_to_line(state, src, dest);
 	}
 	state->cursor_y += len;
 	state->cursor_x = 0;
@@ -184,15 +255,13 @@ void create_newline(editor_state_t* state, int pos){
 }
 
 void remove_lines(editor_state_t* state, int start, int len){
-	if (state->cursor_y == 0) {
-		return;
-	}
 	for (int i = start; i < state->line_count - len; i++){
-		copy_line_to_line(state, i+len, i);
+		int src = i+len;
+		int dest = i;
+		copy_line_to_line(state, src, dest);
 	}
 	state->line_count -= len;
-	state->cursor_y -= 1;
-	state->cursor_x = state->lines[state->cursor_y].length;
+	state->line_count = fox_max(state->line_count, 0);
 }
 
 void clear_all_lines(editor_state_t* state){
@@ -200,48 +269,59 @@ void clear_all_lines(editor_state_t* state){
 	state->lines[0].length = 0;
 	state->cursor_x = 0;
 	state->cursor_y = 0;
-	state->needs_saving = 1;
+	state->edited_since_saving = 1;
 }
 
 // ====== Character Management Functions ======
-
 int remove_characters(editor_state_t* state, int line_index, int start, int len){
 	for (int i = start; i < state->lines[line_index].length - len; i++){
 		state->lines[line_index].data[i] = state->lines[line_index].data[i+len];
 	}
 	state->lines[line_index].length -= len;
+	state->lines[line_index].length = fox_max(state->lines[line_index].length, 0);
 	return 1;
 }
 
-void backspace(editor_state_t* state, int line_index, int start, int len){
-	if (state->cursor_x == 0){
-		if (state->lines[state->cursor_y].length == 0){
+void backspace_at_cursor(editor_state_t* state, int len){
+	int line_index = state->cursor_y;
+	int start = state->cursor_x - 1;
+	if (state->cursor_x - len < 0){
+		if (state->lines[state->cursor_y].length - len < 0 && state->cursor_y != 0){
 			remove_lines(state, state->cursor_y, 1);
-
-		}else{
-			state->cursor_y -= 1;
-			limit_cursor_to_bounds(state);
-			state->cursor_x = state->lines[state->cursor_y].length;
 		}
+		state->cursor_y -= 1;
+		limit_cursor_to_bounds(state);
+		state->cursor_x = state->lines[state->cursor_y].length;
 		return;
 	}
 
 	if (remove_characters(state, line_index, start, len)){
-		state->cursor_x -= 1;
+		state->cursor_x -= len;
 	}
 }
 
-void insert_character(editor_state_t* state, int line_index, int pos, char character){
+void insert_character_at_cursor(editor_state_t* state, char character){
+	const int pos = state->cursor_x;
+	const int line_index = state->cursor_y;
 	const int len = 1;
+	
+	// Don't bother inserting character if it would overrun line
 	if (state->lines[line_index].length + len > MAX_LINE_LENGTH){
 		return;
 	}
+	
 	state->lines[line_index].length += len;
+	// Shuffle characters after the cursor to the right to make room for the new character
 	for (int i = state->lines[line_index].length - 1; i >= pos + len; i--){
 		state->lines[line_index].data[i] = state->lines[line_index].data[i-len];
 	}
-	state->lines[line_index].data[state->cursor_x] = character;
+	state->lines[line_index].data[pos] = character;
+	
 	state->cursor_x += len;
+	
+	state->edited_since_saving = 1;
+	limit_cursor_to_bounds(state);
+	state->furthest_right = state->cursor_x;
 }
 
 // ====== Key Handling ======
@@ -249,25 +329,23 @@ void send_special_key(editor_state_t* state, int key){
 	int skip_set_furthest_right = 0;
 	switch(key){
 		case(FOX_KEY_ENTER): {
-			create_newline(state, state->cursor_y);
-			state->needs_saving = 1;
+			create_newline_at_cursor(state);
+			state->edited_since_saving = 1;
 			break;
 		}
 		case(FOX_KEY_BACKSPACE): {
-			int line_index = state->cursor_y;
-			int start = state->cursor_x - 1;
-			int len = 1;
-			backspace(state, line_index, start, len);
-			state->needs_saving = 1;
+			const int len = 1;
+			backspace_at_cursor(state, len);
+			state->edited_since_saving = 1;
 			break;
 		}
 		case(FOX_KEY_DELETE): {
 			int line_index = state->cursor_y;
 			int start = state->cursor_x;
-			int len = 1;
+			const int len = 1;
 			if (start != state->lines[line_index].length){
 				remove_characters(state, line_index, start, len);
-				state->needs_saving = 1;
+				state->edited_since_saving = 1;
 			}
 			break;
 		}
@@ -287,6 +365,7 @@ void send_special_key(editor_state_t* state, int key){
 			}
 			break;
 		}
+		
 		case(FOX_KEY_UP): {
 			state->cursor_y -= 1;
 			state->cursor_x = state->furthest_right;
@@ -339,15 +418,6 @@ void send_special_key(editor_state_t* state, int key){
 	if (!skip_set_furthest_right){
 		state->furthest_right = state->cursor_x;
 	}
-}
-
-void type_character(editor_state_t* state, int ch){
-	int line_index = state->cursor_y;
-	int pos = state->cursor_x;
-	insert_character(state, line_index, pos, ch);
-	state->needs_saving = 1;
-	limit_cursor_to_bounds(state);
-	state->furthest_right = state->cursor_x;
 }
 #endif
 
