@@ -33,6 +33,7 @@
 typedef struct {
 	char data[MAX_LINE_LENGTH];
 	int length;
+	int visual_length;
 } line_t;
 
 typedef struct {
@@ -232,6 +233,7 @@ void print_in_view(editor_state_t* state, int view_height, int view_offset_y){
 // ====== Line Management Functions ======
 void copy_line_to_line(editor_state_t* state, int index_src, int index_dest){
 	state->lines[index_dest].length = state->lines[index_src].length;
+	state->lines[index_dest].visual_length = state->lines[index_src].visual_length;
 	for (int i = 0; i < state->lines[index_src].length; i++){
 		state->lines[index_dest].data[i] = state->lines[index_src].data[i];
 	}
@@ -252,6 +254,7 @@ void create_newline_at_cursor(editor_state_t* state){
 	state->cursor_y += len;
 	state->cursor_x = 0;
 	state->lines[state->cursor_y].length = 0;
+	state->lines[state->cursor_y].visual_length = 0;
 }
 
 void remove_lines(editor_state_t* state, int start, int len){
@@ -267,6 +270,7 @@ void remove_lines(editor_state_t* state, int start, int len){
 void clear_all_lines(editor_state_t* state){
 	state->line_count = 1;
 	state->lines[0].length = 0;
+	state->lines[0].visual_length = 0;
 	state->cursor_x = 0;
 	state->cursor_y = 0;
 	state->edited_since_saving = 1;
@@ -274,6 +278,13 @@ void clear_all_lines(editor_state_t* state){
 
 // ====== Character Management Functions ======
 int remove_characters(editor_state_t* state, int line_index, int start, int len){
+	for (int i = start; i < start + len; i++){
+		if (state->lines[line_index].data[i] == '\t'){
+			state->lines[line_index].visual_length -= TAB_WIDTH;
+		}else{
+			state->lines[line_index].visual_length -= 1;
+		}
+	}
 	for (int i = start; i < state->lines[line_index].length - len; i++){
 		state->lines[line_index].data[i] = state->lines[line_index].data[i+len];
 	}
@@ -311,6 +322,11 @@ void insert_character_at_cursor(editor_state_t* state, char character){
 	}
 	
 	state->lines[line_index].length += len;
+	if (character == '\t') {
+		state->lines[line_index].visual_length += len * TAB_WIDTH;
+	} else {
+		state->lines[line_index].visual_length += len;
+	}
 	// Shuffle characters after the cursor to the right to make room for the new character
 	for (int i = state->lines[line_index].length - 1; i >= pos + len; i--){
 		state->lines[line_index].data[i] = state->lines[line_index].data[i-len];
