@@ -39,7 +39,6 @@ void render_all(editor_state_t* state){
 	for (int i = 0; i < state->screen_width; i++){
 		addch(' ');
 	}
-	// TODO: The user doesn't need to see this, but I do.
 	mvwprintw(stdscr, state->screen_height-1, 0, "%d", state->lines[state->cursor_y].visual_length);
 	if (state->edited_since_saving){
 		mvwprintw(stdscr, state->screen_height-1, state->screen_width-state->filename_length, "*");
