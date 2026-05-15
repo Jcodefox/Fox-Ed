@@ -4,3 +4,6 @@
 </div>
 
 A simple text editor
+
+I am labeling this project as complete for now.
+Don't expect any updates for a while, if I do ever come back to it.
