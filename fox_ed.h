@@ -111,11 +111,6 @@ int get_line_visual_width(editor_state_t* state, int line){
 	return len;
 }
 
-int get_line_visual_height(editor_state_t* state, int line){
-	int len = fox_max(1, get_line_visual_width(state, line));
-	return (len / (state->screen_width - 6));
-}
-
 int get_view_cursor_x(editor_state_t* state, int view_offset_y){
 	int x = state->cursor_x;
 	for(int i = 0; i < fox_min(state->lines[state->cursor_y].length, state->cursor_x); i++){
@@ -123,7 +118,6 @@ int get_view_cursor_x(editor_state_t* state, int view_offset_y){
 			x += TAB_WIDTH - 1;
 		}
 	}
-	x = x % (state->screen_width - 6);
 	x += 6;
 	x = fox_min(x, state->screen_width - 1);
 	return x;
@@ -131,10 +125,6 @@ int get_view_cursor_x(editor_state_t* state, int view_offset_y){
 
 int get_view_cursor_y(editor_state_t *state, int view_offset_y){
 	int y = (state->cursor_y - state->view_data_offset_y) + view_offset_y;
-	for (int i = state->view_data_offset_y; i < state->cursor_y; i++){
-		y += get_line_visual_height(state, i);
-	}
-	y += state->cursor_x / (state->screen_width - 6);
 	return y;
 }
 
@@ -144,7 +134,7 @@ void set_cursor_in_view(editor_state_t* state, int view_offset_y){
 	set_cursor_on_screen(x, y);
 }
 
-int print_line_at(const line_t* line, int y, int line_index, int max_width){
+void print_line_at(const line_t* line, int y, int line_index, int max_width){
 	clear_line(y);
 	int val_to_print = line_index + 1;
 	int printed_above_zero = 0;
@@ -162,7 +152,6 @@ int print_line_at(const line_t* line, int y, int line_index, int max_width){
 		}
 	}
 	put_char_at(x++, y, ' ');
-	int lines_printed = 1;
 	for (int i = 0; i < line->length; i++){
 		if (line->data[i] == '\t'){
 			for (int t = 0; t < TAB_WIDTH; t++){
@@ -173,55 +162,28 @@ int print_line_at(const line_t* line, int y, int line_index, int max_width){
 		}
 		
 		if (x >= max_width && i != line->length){
-			y += 1;
-			clear_line(y);
-			x = 6;
-			lines_printed += 1;
+			break;
 		}
 	}
-	return lines_printed;
 }
 
 //TODO: Simplify lines below
-int how_many_to_print(editor_state_t* state, int view_height, int data_offset){
-	int amount_y = fox_min(view_height, state->line_count);
-	int sum = 0;
-	for (int i = 0; i < amount_y; i++){
-		sum += get_line_visual_height(state, data_offset + i) + 1;
-		if (sum >= view_height){
-			return i + 1;
-		}
-	}
-	return amount_y;
-}
-
-int get_cursor_y_visual_dist_to_top_of_view(editor_state_t *state){
-	int y = state->cursor_y;//(state->cursor_y - state->view_data_offset_y);
-	y += state->cursor_x / (state->screen_width - 6);
-	for (int i = state->view_data_offset_y; i < state->cursor_y; i++){
-		y += get_line_visual_height(state, i);
-	}
-	return y;
-}
-
 void print_in_view(editor_state_t* state, int view_height, int view_offset_y){
 	view_height = 10;
 	
-	int c_y = state->cursor_y;
-	int amount_y = how_many_to_print(state, view_height, state->view_data_offset_y);
-	int down_distance_to_scroll = fox_max(0, c_y - amount_y + 1);
-	int data_offset_y = fox_clamp(state->view_data_offset_y, down_distance_to_scroll, c_y);
+	int amount_y = fox_min(view_height, state->line_count);
+	int cursor_y = state->cursor_y;
+	int down_distance_to_scroll = fox_max(0, cursor_y - amount_y + 1);
+	int data_offset_y = fox_clamp(state->view_data_offset_y, down_distance_to_scroll, cursor_y);
 	state->view_data_offset_y = data_offset_y;
 	
-	int overflow_offset = 0;
 	for (int i = 0; i < amount_y; i++){
 		line_t* line = &state->lines[i + data_offset_y];
-		int visual_location = i + view_offset_y + overflow_offset;
+		int visual_location = i + view_offset_y;
 		int line_number = i + data_offset_y;
 		int width = state->screen_width;
 		
-		int lines_taken = print_line_at(line, visual_location, line_number, width);
-		overflow_offset += lines_taken - 1;
+		print_line_at(line, visual_location, line_number, width);
 	}
 	for (int i = amount_y; i < view_height; i++){
 		clear_line(i);
