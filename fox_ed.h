@@ -45,6 +45,7 @@ typedef struct {
 	int furthest_right;
 	
 	int view_data_offset_y;
+	int view_data_offset_x;
 	int screen_width;
 	int screen_height;
 	
@@ -118,6 +119,7 @@ int get_view_cursor_x(editor_state_t* state, int view_offset_y){
 			x += TAB_WIDTH - 1;
 		}
 	}
+	x -= state->view_data_offset_x;
 	x += 6;
 	x = fox_min(x, state->screen_width - 1);
 	return x;
@@ -134,7 +136,7 @@ void set_cursor_in_view(editor_state_t* state, int view_offset_y){
 	set_cursor_on_screen(x, y);
 }
 
-void print_line_at(const line_t* line, int y, int line_index, int max_width){
+void print_line_at(const line_t* line, int y, int line_index, int max_width, int data_offset_x){
 	clear_line(y);
 	int val_to_print = line_index + 1;
 	int printed_above_zero = 0;
@@ -155,19 +157,24 @@ void print_line_at(const line_t* line, int y, int line_index, int max_width){
 	for (int i = 0; i < line->length; i++){
 		if (line->data[i] == '\t'){
 			for (int t = 0; t < TAB_WIDTH; t++){
-				put_char_at(x++, y, ' ');
+				int draw_x = x++ - data_offset_x;
+				if (draw_x > 5){
+					put_char_at(draw_x, y, ' ');
+				}
 			}
 		}else{
-			put_char_at(x++, y, line->data[i]);
+			int draw_x = x++ - data_offset_x;
+			if (draw_x > 5){
+				put_char_at(draw_x, y, line->data[i]);
+			}
 		}
 		
-		if (x >= max_width && i != line->length){
+		if (x >= max_width + data_offset_x && i != line->length){
 			break;
 		}
 	}
 }
 
-//TODO: Simplify lines below
 void print_in_view(editor_state_t* state, int view_height, int view_offset_y){
 	view_height = 10;
 	
@@ -177,20 +184,31 @@ void print_in_view(editor_state_t* state, int view_height, int view_offset_y){
 	int data_offset_y = fox_clamp(state->view_data_offset_y, down_distance_to_scroll, cursor_y);
 	state->view_data_offset_y = data_offset_y;
 	
+	int cursor_x = state->cursor_x;
+	
+	for(int i = 0; i < fox_min(state->lines[state->cursor_y].length, state->cursor_x); i++){
+		if (state->lines[state->cursor_y].data[i] == '\t'){
+			cursor_x += TAB_WIDTH - 1;
+		}
+	}
+	
+	state->view_data_offset_x = fox_min(state->view_data_offset_x, cursor_x);
+	state->view_data_offset_x = fox_max(state->view_data_offset_x, cursor_x - state->screen_width + 7);
+	int data_offset_x = state->view_data_offset_x;
+	
 	for (int i = 0; i < amount_y; i++){
 		line_t* line = &state->lines[i + data_offset_y];
 		int visual_location = i + view_offset_y;
 		int line_number = i + data_offset_y;
 		int width = state->screen_width;
 		
-		print_line_at(line, visual_location, line_number, width);
+		print_line_at(line, visual_location, line_number, width, data_offset_x);
 	}
 	for (int i = amount_y; i < view_height; i++){
 		clear_line(i);
 	}
 }
 
-// Below functions are likely simplified enough
 // ====== Line Management Functions ======
 void copy_line_to_line(editor_state_t* state, int index_src, int index_dest){
 	state->lines[index_dest].length = state->lines[index_src].length;

@@ -99,6 +99,7 @@ int main(int argc, char* argv[]){
 	editor_state.lines[0].length = 0;
 	editor_state.edited_since_saving = 0;
 	editor_state.view_data_offset_y = 0;
+	editor_state.view_data_offset_x = 0;
 	
 	if (argc >= 2){
 		while(
