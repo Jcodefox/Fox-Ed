@@ -176,8 +176,6 @@ void print_line_at(const line_t* line, int y, int line_index, int max_width, int
 }
 
 void print_in_view(editor_state_t* state, int view_height, int view_offset_y){
-	view_height = 10;
-	
 	int amount_y = fox_min(view_height, state->line_count);
 	int cursor_y = state->cursor_y;
 	int down_distance_to_scroll = fox_max(0, cursor_y - amount_y + 1);
